@@ -18,6 +18,7 @@
         <PackageReference Include="Microsoft.Agents.AI" />
         <PackageReference Include="Microsoft.Agents.AI.Anthropic" />
         <PackageReference Include="Microsoft.Agents.AI.AzureAI" />
+        <PackageReference Include="Azure.AI.OpenAI" />
         <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
@@ -56,6 +57,7 @@
         <Link>.dockerignore</Link>
       </Content>
       <Content Include="skills\**\*" CopyToOutputDirectory="PreserveNewest" />
+      <Content Include="prompts\**\*" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

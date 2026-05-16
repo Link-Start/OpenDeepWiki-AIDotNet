@@ -12,6 +12,7 @@ using OpenDeepWiki.Infrastructure;
 using OpenDeepWiki.Services.Admin;
 using OpenDeepWiki.Services.Auth;
 using OpenDeepWiki.Services.GitHub;
+using OpenDeepWiki.Services.Graphify;
 using OpenDeepWiki.Services.Chat;
 using OpenDeepWiki.Services.MindMap;
 using OpenDeepWiki.Services.Notifications;
@@ -185,6 +186,67 @@ try
         });
     builder.Services.AddScoped<IRepositoryAnalyzer, RepositoryAnalyzer>();
 
+    // Configure Graphify artifact generation
+    builder.Services.AddOptions<GraphifyOptions>()
+        .Bind(builder.Configuration.GetSection("Graphify"))
+        .PostConfigure(options =>
+        {
+            var command = Environment.GetEnvironmentVariable("GRAPHIFY_COMMAND");
+            if (!string.IsNullOrWhiteSpace(command))
+            {
+                options.Command = command;
+            }
+
+            var backend = Environment.GetEnvironmentVariable("GRAPHIFY_BACKEND");
+            if (!string.IsNullOrWhiteSpace(backend))
+            {
+                options.Backend = backend;
+            }
+
+            var model = Environment.GetEnvironmentVariable("GRAPHIFY_MODEL");
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                options.Model = model;
+            }
+
+            var openAiBaseUrl = Environment.GetEnvironmentVariable("GRAPHIFY_OPENAI_BASE_URL")
+                ?? Environment.GetEnvironmentVariable("OPENAI_BASE_URL");
+            if (!string.IsNullOrWhiteSpace(openAiBaseUrl))
+            {
+                options.OpenAiBaseUrl = openAiBaseUrl;
+            }
+
+            var openAiApiKey = Environment.GetEnvironmentVariable("GRAPHIFY_OPENAI_API_KEY")
+                ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+            if (!string.IsNullOrWhiteSpace(openAiApiKey))
+            {
+                options.OpenAiApiKey = openAiApiKey;
+            }
+
+            var outputRoot = Environment.GetEnvironmentVariable("GRAPHIFY_OUTPUT_ROOT");
+            if (!string.IsNullOrWhiteSpace(outputRoot))
+            {
+                options.OutputRoot = outputRoot;
+            }
+        });
+    builder.Services.AddScoped<IGraphifyCliRunner, GraphifyCliRunner>();
+
+    // Opt-in publish to the understand-quickly registry of code-knowledge graphs.
+    // https://github.com/looptech-ai/understand-quickly
+    builder.Services.AddOptions<UnderstandQuicklyOptions>()
+        .Bind(builder.Configuration.GetSection(UnderstandQuicklyOptions.SectionName))
+        .PostConfigure(options =>
+        {
+            var token = Environment.GetEnvironmentVariable("UNDERSTAND_QUICKLY_TOKEN");
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                options.Token = token;
+                options.Enabled = true;
+            }
+        });
+    builder.Services
+        .AddHttpClient<IUnderstandQuicklyPublisher, UnderstandQuicklyPublisher>();
+
     // 配置 Wiki Generator
     builder.Services.AddOptions<WikiGeneratorOptions>()
         .Bind(builder.Configuration.GetSection(WikiGeneratorOptions.SectionName))
@@ -229,7 +291,9 @@ try
     builder.Services.AddScoped<IAdminToolsService, AdminToolsService>();
     builder.Services.AddScoped<IAdminSettingsService, AdminSettingsService>();
     builder.Services.AddScoped<IAdminChatAssistantService, AdminChatAssistantService>();
+    builder.Services.AddScoped<IAdminApiKeyService, AdminApiKeyService>();
     builder.Services.AddScoped<IOrganizationService, OrganizationService>();
+    builder.Services.AddScoped<IGraphifyArtifactService, GraphifyArtifactService>();
 
     // 注册动态配置管理器
     builder.Services.AddScoped<IDynamicConfigManager, DynamicConfigManager>();
@@ -246,6 +310,7 @@ try
     builder.Services.AddHostedService<RepositoryProcessingWorker>();
     builder.Services.AddHostedService<TranslationWorker>();
     builder.Services.AddHostedService<MindMapWorker>();
+    builder.Services.AddHostedService<GraphifyArtifactWorker>();
 
     // 配置增量更新选项
     // Requirements: 6.2, 6.3, 6.6 - 可配置的更新间隔
@@ -383,6 +448,7 @@ try
 
     app.MapMiniApis();
     app.MapAuthEndpoints();
+    app.MapApiKeyEndpoints();
     app.MapOAuthEndpoints();
     app.MapAdminEndpoints();
     app.MapGitHubImportEndpoints();
@@ -391,6 +457,7 @@ try
     app.MapChatAppEndpoints();
     app.MapEmbedEndpoints();
 
+    app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
     app.MapSystemEndpoints();
     app.MapIncrementalUpdateEndpoints();
     app.MapMcpProviderEndpoints();
@@ -399,6 +466,11 @@ try
     using (var scope = app.Services.CreateScope())
     {
         await DbInitializer.InitializeAsync(scope.ServiceProvider);
+
+        // 从数据库系统设置加载 AI 配置（覆盖环境变量/appsettings 的默认值）
+        var settingsService = scope.ServiceProvider.GetRequiredService<IAdminSettingsService>();
+        var wikiOptions = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<WikiGeneratorOptions>>().CurrentValue;
+        await SystemSettingDefaults.ApplyToWikiGeneratorOptions(wikiOptions, settingsService);
     }
 
     app.Run();

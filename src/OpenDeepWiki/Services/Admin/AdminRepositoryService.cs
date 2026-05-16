@@ -129,12 +129,12 @@ public class AdminRepositoryService : IAdminRepositoryService
     public async Task<bool> DeleteRepositoryAsync(string id)
     {
         var repo = await _context.Repositories
-            .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted);
+            .FirstOrDefaultAsync(r => r.Id == id);
 
         if (repo == null) return false;
 
-        repo.IsDeleted = true;
-        repo.UpdatedAt = DateTime.UtcNow;
+        await DeleteRepositoryDataAsync([repo.Id]);
+        repo.MarkAsDeleted();
         await _context.SaveChangesAsync();
         return true;
     }
@@ -150,6 +150,170 @@ public class AdminRepositoryService : IAdminRepositoryService
         repo.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         return true;
+    }
+
+    private async Task ClearRepositoryReferencesAsync(IReadOnlyCollection<string> repositoryIds)
+    {
+        if (repositoryIds.Count == 0)
+        {
+            return;
+        }
+
+        var repositoryIdArray = repositoryIds.Distinct().ToArray();
+
+        var tokenUsages = await _context.TokenUsages
+            .Where(usage => usage.RepositoryId != null && repositoryIdArray.Contains(usage.RepositoryId))
+            .ToListAsync();
+        foreach (var tokenUsage in tokenUsages)
+        {
+            tokenUsage.RepositoryId = null;
+            tokenUsage.UpdateTimestamp();
+        }
+
+        var userActivities = await _context.UserActivities
+            .Where(activity => activity.RepositoryId != null && repositoryIdArray.Contains(activity.RepositoryId))
+            .ToListAsync();
+        foreach (var userActivity in userActivities)
+        {
+            userActivity.RepositoryId = null;
+            userActivity.UpdateTimestamp();
+        }
+    }
+
+    private async Task DeleteRepositoryDataAsync(IReadOnlyCollection<string> repositoryIds)
+    {
+        if (repositoryIds.Count == 0)
+        {
+            return;
+        }
+
+        var repositoryIdArray = repositoryIds.Distinct().ToArray();
+        await ClearRepositoryReferencesAsync(repositoryIdArray);
+
+        var repositoryAssignments = await _context.RepositoryAssignments
+            .Where(assignment => repositoryIdArray.Contains(assignment.RepositoryId))
+            .ToListAsync();
+        if (repositoryAssignments.Count > 0)
+        {
+            _context.RepositoryAssignments.RemoveRange(repositoryAssignments);
+        }
+
+        var userBookmarks = await _context.UserBookmarks
+            .Where(bookmark => repositoryIdArray.Contains(bookmark.RepositoryId))
+            .ToListAsync();
+        if (userBookmarks.Count > 0)
+        {
+            _context.UserBookmarks.RemoveRange(userBookmarks);
+        }
+
+        var userSubscriptions = await _context.UserSubscriptions
+            .Where(subscription => repositoryIdArray.Contains(subscription.RepositoryId))
+            .ToListAsync();
+        if (userSubscriptions.Count > 0)
+        {
+            _context.UserSubscriptions.RemoveRange(userSubscriptions);
+        }
+
+        var userDislikes = await _context.UserDislikes
+            .Where(dislike => repositoryIdArray.Contains(dislike.RepositoryId))
+            .ToListAsync();
+        if (userDislikes.Count > 0)
+        {
+            _context.UserDislikes.RemoveRange(userDislikes);
+        }
+
+        var repositoryLogs = await _context.RepositoryProcessingLogs
+            .Where(log => repositoryIdArray.Contains(log.RepositoryId))
+            .ToListAsync();
+        if (repositoryLogs.Count > 0)
+        {
+            _context.RepositoryProcessingLogs.RemoveRange(repositoryLogs);
+        }
+
+        var branchIds = await _context.RepositoryBranches
+            .Where(branch => repositoryIdArray.Contains(branch.RepositoryId))
+            .Select(branch => branch.Id)
+            .ToListAsync();
+
+        var branchIdArray = branchIds.Distinct().ToArray();
+        var branchLanguageIds = branchIdArray.Length == 0
+            ? new List<string>()
+            : await _context.BranchLanguages
+                .Where(language => branchIdArray.Contains(language.RepositoryBranchId))
+                .Select(language => language.Id)
+                .ToListAsync();
+
+        var branchLanguageIdArray = branchLanguageIds.Distinct().ToArray();
+
+        var docCatalogs = branchLanguageIdArray.Length == 0
+            ? new List<DocCatalog>()
+            : await _context.DocCatalogs
+                .Where(catalog => branchLanguageIdArray.Contains(catalog.BranchLanguageId))
+                .ToListAsync();
+        if (docCatalogs.Count > 0)
+        {
+            _context.DocCatalogs.RemoveRange(docCatalogs);
+        }
+
+        var docFiles = branchLanguageIdArray.Length == 0
+            ? new List<DocFile>()
+            : await _context.DocFiles
+                .Where(file => branchLanguageIdArray.Contains(file.BranchLanguageId))
+                .ToListAsync();
+        if (docFiles.Count > 0)
+        {
+            _context.DocFiles.RemoveRange(docFiles);
+        }
+
+        var translationTasks = await _context.TranslationTasks
+            .Where(task => repositoryIdArray.Contains(task.RepositoryId) ||
+                           branchIdArray.Contains(task.RepositoryBranchId) ||
+                           branchLanguageIdArray.Contains(task.SourceBranchLanguageId))
+            .ToListAsync();
+        if (translationTasks.Count > 0)
+        {
+            _context.TranslationTasks.RemoveRange(translationTasks);
+        }
+
+        var incrementalTasks = await _context.IncrementalUpdateTasks
+            .Where(task => repositoryIdArray.Contains(task.RepositoryId) ||
+                           branchIdArray.Contains(task.BranchId))
+            .ToListAsync();
+        if (incrementalTasks.Count > 0)
+        {
+            _context.IncrementalUpdateTasks.RemoveRange(incrementalTasks);
+        }
+
+        var graphifyArtifacts = await _context.GraphifyArtifacts
+            .Where(artifact => repositoryIdArray.Contains(artifact.RepositoryId) ||
+                               branchIdArray.Contains(artifact.RepositoryBranchId))
+            .ToListAsync();
+        if (graphifyArtifacts.Count > 0)
+        {
+            _context.GraphifyArtifacts.RemoveRange(graphifyArtifacts);
+        }
+
+        if (branchLanguageIdArray.Length > 0)
+        {
+            var branchLanguages = await _context.BranchLanguages
+                .Where(language => branchLanguageIdArray.Contains(language.Id))
+                .ToListAsync();
+            if (branchLanguages.Count > 0)
+            {
+                _context.BranchLanguages.RemoveRange(branchLanguages);
+            }
+        }
+
+        if (branchIdArray.Length > 0)
+        {
+            var repositoryBranches = await _context.RepositoryBranches
+                .Where(branch => branchIdArray.Contains(branch.Id))
+                .ToListAsync();
+            if (repositoryBranches.Count > 0)
+            {
+                _context.RepositoryBranches.RemoveRange(repositoryBranches);
+            }
+        }
     }
 
     private static string GetStatusText(RepositoryStatus status) => status switch
@@ -264,14 +428,17 @@ public class AdminRepositoryService : IAdminRepositoryService
         };
 
         var repos = await _context.Repositories
-            .Where(r => ids.Contains(r.Id) && !r.IsDeleted)
+            .Where(r => ids.Contains(r.Id))
             .ToListAsync();
 
-        foreach (var repo in repos)
+        if (repos.Count > 0)
         {
-            repo.IsDeleted = true;
-            repo.UpdatedAt = DateTime.UtcNow;
-            result.SuccessCount++;
+            await DeleteRepositoryDataAsync(repos.Select(r => r.Id).ToArray());
+            foreach (var repo in repos)
+            {
+                repo.MarkAsDeleted();
+            }
+            result.SuccessCount = repos.Count;
         }
 
         // 记录不存在的仓库

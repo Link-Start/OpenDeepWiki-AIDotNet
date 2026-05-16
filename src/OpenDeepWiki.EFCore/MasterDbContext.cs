@@ -43,9 +43,11 @@ public interface IContext : IDisposable
     DbSet<ChatLog> ChatLogs { get; set; }
     DbSet<TranslationTask> TranslationTasks { get; set; }
     DbSet<IncrementalUpdateTask> IncrementalUpdateTasks { get; set; }
+    DbSet<GraphifyArtifact> GraphifyArtifacts { get; set; }
     DbSet<McpProvider> McpProviders { get; set; }
     DbSet<McpUsageLog> McpUsageLogs { get; set; }
     DbSet<McpDailyStatistics> McpDailyStatistics { get; set; }
+    DbSet<ApiKey> ApiKeys { get; set; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
@@ -94,9 +96,11 @@ public abstract class MasterDbContext : DbContext, IContext
     public DbSet<ChatLog> ChatLogs { get; set; } = null!;
     public DbSet<TranslationTask> TranslationTasks { get; set; } = null!;
     public DbSet<IncrementalUpdateTask> IncrementalUpdateTasks { get; set; } = null!;
+    public DbSet<GraphifyArtifact> GraphifyArtifacts { get; set; } = null!;
     public DbSet<McpProvider> McpProviders { get; set; } = null!;
     public DbSet<McpUsageLog> McpUsageLogs { get; set; } = null!;
     public DbSet<McpDailyStatistics> McpDailyStatistics { get; set; } = null!;
+    public DbSet<ApiKey> ApiKeys { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -284,6 +288,15 @@ public abstract class MasterDbContext : DbContext, IContext
         modelBuilder.Entity<IncrementalUpdateTask>()
             .HasIndex(t => new { t.Priority, t.CreatedAt });
 
+        // GraphifyArtifact 仓库分支唯一索引（每个分支保留一个最新图谱）
+        modelBuilder.Entity<GraphifyArtifact>()
+            .HasIndex(a => a.RepositoryBranchId)
+            .IsUnique();
+
+        // GraphifyArtifact 状态索引（用于后台 worker 查询待处理任务）
+        modelBuilder.Entity<GraphifyArtifact>()
+            .HasIndex(a => new { a.Status, a.CreatedAt });
+
         // McpProvider 表配置
         modelBuilder.Entity<McpProvider>(builder =>
         {
@@ -394,5 +407,12 @@ public abstract class MasterDbContext : DbContext, IContext
             .WithMany()
             .HasForeignKey(g => g.DepartmentId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // ApiKey indexes
+        modelBuilder.Entity<ApiKey>(entity =>
+        {
+            entity.HasIndex(e => e.KeyPrefix).IsUnique();
+            entity.HasIndex(e => e.UserId);
+        });
     }
 }

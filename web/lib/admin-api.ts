@@ -391,6 +391,21 @@ export interface AdminRepositoryOperationResult {
   message: string;
 }
 
+export interface AdminGraphifyArtifact {
+  id: string;
+  repositoryId: string;
+  repositoryBranchId: string;
+  branchName: string;
+  status: number;
+  statusName: string;
+  commitId?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
 export interface RegenerateRepositoryDocumentPayload {
   branchId: string;
   languageCode: string;
@@ -413,6 +428,24 @@ export async function getRepositoryManagement(id: string): Promise<AdminReposito
 export async function regenerateRepository(id: string): Promise<AdminRepositoryOperationResult> {
   const url = buildApiUrl(`/api/admin/repositories/${id}/regenerate`);
   const result = await fetchWithAuth(url, { method: "POST" });
+  return result.data;
+}
+
+export async function getRepositoryGraphifyArtifacts(id: string): Promise<AdminGraphifyArtifact[]> {
+  const url = buildApiUrl(`/api/admin/repositories/${id}/graphify`);
+  const result = await fetchWithAuth(url);
+  return result.data;
+}
+
+export async function generateRepositoryGraphify(
+  id: string,
+  branchId?: string
+): Promise<AdminRepositoryOperationResult> {
+  const url = buildApiUrl(`/api/admin/repositories/${id}/graphify/generate`);
+  const result = await fetchWithAuth(url, {
+    method: "POST",
+    body: JSON.stringify({ branchId }),
+  });
   return result.data;
 }
 
@@ -1307,5 +1340,51 @@ export async function saveGitHubConfig(data: {
 
 export async function resetGitHubConfig(): Promise<void> {
   const url = buildApiUrl("/api/admin/github/config");
+  await fetchWithAuth(url, { method: "DELETE" });
+}
+
+// ==================== API Key API ====================
+
+export interface ApiKeyCreateResult {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  scope: string;
+  expiresAt?: string;
+  plainTextKey: string;
+}
+
+export interface ApiKeyListItem {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  userId: string;
+  userEmail?: string;
+  scope: string;
+  expiresAt?: string;
+  lastUsedAt?: string;
+  createdAt: string;
+}
+
+export async function getApiKeys(): Promise<ApiKeyListItem[]> {
+  const url = buildApiUrl("/api/admin/api-keys");
+  return fetchWithAuth(url);
+}
+
+export async function createApiKey(data: {
+  name: string;
+  userId: string;
+  scope?: string;
+  expiresInDays?: number;
+}): Promise<ApiKeyCreateResult> {
+  const url = buildApiUrl("/api/admin/api-keys");
+  return fetchWithAuth(url, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function revokeApiKey(id: string): Promise<void> {
+  const url = buildApiUrl(`/api/admin/api-keys/${id}`);
   await fetchWithAuth(url, { method: "DELETE" });
 }
