@@ -19,7 +19,8 @@ namespace OpenDeepWiki.Agents
         OpenAI,
         AzureOpenAI,
         OpenAIResponses,
-        Anthropic
+        Anthropic,
+        DeepSeekOpenAI
     }
 
     public class AiRequestOptions
@@ -27,6 +28,12 @@ namespace OpenDeepWiki.Agents
         public string? Endpoint { get; set; }
         public string? ApiKey { get; set; }
         public AiRequestType? RequestType { get; set; }
+        public bool SupportsThinking { get; set; }
+        public bool? ThinkingEnabled { get; set; }
+        public string? ThinkingConfigJson { get; set; }
+        public string? ProviderRequestOverridesJson { get; set; }
+        public string? ModelRequestOverridesJson { get; set; }
+        public string? PromptCacheKey { get; set; }
     }
 
     /// <summary>
@@ -143,6 +150,23 @@ namespace OpenDeepWiki.Agents
                     return client.AsAIAgent(clientAgentOptions);
                 }
 
+                case AiRequestType.DeepSeekOpenAI:
+                {
+                    var apiKey = ResolveRequiredApiKey(option);
+                    clientAgentOptions.ChatOptions ??= new ChatOptions();
+                    clientAgentOptions.ChatOptions.ModelId = model;
+
+                    var chatClient = new DeepSeekOpenAIChatClient(
+                        model,
+                        option.Endpoint,
+                        apiKey,
+                        httpClient,
+                        option,
+                        disposeHttpClient: true);
+
+                    return chatClient.AsAIAgent(clientAgentOptions);
+                }
+
                 default:
                     throw new NotSupportedException($"Unsupported AI request type: {option.RequestType}");
             }
@@ -156,26 +180,14 @@ namespace OpenDeepWiki.Agents
             {
                 ApiKey = options?.ApiKey,
                 Endpoint = options?.Endpoint,
-                RequestType = options?.RequestType
+                RequestType = options?.RequestType,
+                SupportsThinking = options?.SupportsThinking ?? false,
+                ThinkingEnabled = options?.ThinkingEnabled,
+                ThinkingConfigJson = options?.ThinkingConfigJson,
+                ProviderRequestOverridesJson = options?.ProviderRequestOverridesJson,
+                ModelRequestOverridesJson = options?.ModelRequestOverridesJson,
+                PromptCacheKey = options?.PromptCacheKey
             };
-
-            if (allowEnvironmentFallback)
-            {
-                if (string.IsNullOrWhiteSpace(resolved.ApiKey))
-                {
-                    resolved.ApiKey = Environment.GetEnvironmentVariable("CHAT_API_KEY");
-                }
-
-                if (string.IsNullOrWhiteSpace(resolved.Endpoint))
-                {
-                    resolved.Endpoint = Environment.GetEnvironmentVariable("ENDPOINT");
-                }
-
-                if (!resolved.RequestType.HasValue)
-                {
-                    resolved.RequestType = TryParseRequestType(Environment.GetEnvironmentVariable("CHAT_REQUEST_TYPE"));
-                }
-            }
 
             if (string.IsNullOrWhiteSpace(resolved.Endpoint))
             {
@@ -198,7 +210,7 @@ namespace OpenDeepWiki.Agents
             }
 
             throw new InvalidOperationException(
-                "AI API key is not configured. Configure AI:ApiKey, CHAT_API_KEY, or a request-specific API key.");
+                "AI API key is not configured. Configure an AI provider and bind a model in system settings.");
         }
 
         private static AiRequestType? TryParseRequestType(string? requestType)

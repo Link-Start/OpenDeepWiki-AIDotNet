@@ -43,7 +43,13 @@ public class TokenUsageStatisticsResponse
     public List<DailyTokenUsage> DailyUsages { get; set; } = new();
     public long TotalInputTokens { get; set; }
     public long TotalOutputTokens { get; set; }
+    public long TotalCachedInputTokens { get; set; }
+    public long TotalCacheCreationInputTokens { get; set; }
     public long TotalTokens { get; set; }
+    public decimal InputCacheHitRate { get; set; }
+    public decimal TotalInputCost { get; set; }
+    public decimal TotalOutputCost { get; set; }
+    public decimal TotalCost { get; set; }
 }
 
 /// <summary>
@@ -54,5 +60,11 @@ public class DailyTokenUsage
     public DateTime Date { get; set; }
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
+    public long CachedInputTokens { get; set; }
+    public long CacheCreationInputTokens { get; set; }
     public long TotalTokens { get; set; }
+    public decimal InputCacheHitRate { get; set; }
+    public decimal InputCost { get; set; }
+    public decimal OutputCost { get; set; }
+    public decimal TotalCost { get; set; }
 }

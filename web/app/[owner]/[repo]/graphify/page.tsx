@@ -1,7 +1,17 @@
-import { decodeRouteSegment } from "@/lib/repo-route";
+import type { Metadata } from "next";
+import { buildRepoGraphifyPath, decodeRouteSegment } from "@/lib/repo-route";
 import { fetchGraphifyReport } from "@/lib/repository-api";
 import { MarkdownRenderer } from "@/components/repo/markdown-renderer";
 import Link from "next/link";
+import { getLocale, getTranslations } from "next-intl/server";
+import {
+  buildCanonicalPath,
+  createMarkdownDescription,
+  extractMarkdownTitle,
+  indexableMetadata,
+  noIndexMetadata,
+  repoTitle,
+} from "@/lib/repo-seo";
 
 interface GraphifyPageProps {
   params: Promise<{
@@ -15,10 +25,51 @@ interface GraphifyPageProps {
   }>;
 }
 
+export async function generateMetadata({ params, searchParams }: GraphifyPageProps): Promise<Metadata> {
+  const { owner, repo } = await params;
+  const decodedOwner = decodeRouteSegment(owner);
+  const decodedRepo = decodeRouteSegment(repo);
+  const resolvedSearchParams = await searchParams;
+  const currentView = resolvedSearchParams?.view === "report" ? "report" : "graph";
+  const canonicalPath = buildCanonicalPath(buildRepoGraphifyPath(decodedOwner, decodedRepo), {
+    branch: resolvedSearchParams?.branch,
+    lang: resolvedSearchParams?.lang,
+    view: currentView === "report" ? "report" : undefined,
+  });
+
+  if (currentView !== "report") {
+    return noIndexMetadata(
+      `Graphify - ${repoTitle(decodedOwner, decodedRepo)}`,
+      `Interactive Graphify code graph for ${repoTitle(decodedOwner, decodedRepo)}.`,
+      canonicalPath
+    );
+  }
+
+  try {
+    const reportContent = await fetchGraphifyReport(decodedOwner, decodedRepo, resolvedSearchParams?.branch);
+    const reportTitle = extractMarkdownTitle(reportContent, `Graphify report - ${repoTitle(decodedOwner, decodedRepo)}`);
+
+    return indexableMetadata({
+      title: `${reportTitle} - ${repoTitle(decodedOwner, decodedRepo)}`,
+      description: createMarkdownDescription(reportContent, `Graphify report for ${repoTitle(decodedOwner, decodedRepo)}.`),
+      canonicalPath,
+      type: "article",
+    });
+  } catch {
+    return noIndexMetadata(
+      `Graphify report - ${repoTitle(decodedOwner, decodedRepo)}`,
+      `Graphify report for ${repoTitle(decodedOwner, decodedRepo)} is not available.`,
+      canonicalPath
+    );
+  }
+}
+
 export default async function GraphifyPage({ params, searchParams }: GraphifyPageProps) {
   const { owner, repo } = await params;
   const decodedOwner = decodeRouteSegment(owner);
   const decodedRepo = decodeRouteSegment(repo);
+  const locale = await getLocale();
+  const t = await getTranslations("common");
   const resolvedSearchParams = await searchParams;
   const currentView = resolvedSearchParams?.view === "report" ? "report" : "graph";
 
@@ -66,7 +117,7 @@ export default async function GraphifyPage({ params, searchParams }: GraphifyPag
               : "border-border bg-background hover:bg-muted"
           }`}
         >
-          Graph
+          {t("repository.graphifyGraph")}
         </Link>
         <Link
           href={reportHref}
@@ -76,16 +127,16 @@ export default async function GraphifyPage({ params, searchParams }: GraphifyPag
               : "border-border bg-background hover:bg-muted"
           }`}
         >
-          Report
+          {t("repository.graphifyReport")}
         </Link>
       </div>
 
       {currentView === "report" ? (
         <article className="rounded-xl border border-border/70 bg-card p-6 shadow-sm">
           {reportContent ? (
-            <MarkdownRenderer content={reportContent} />
+            <MarkdownRenderer content={reportContent} language={locale} />
           ) : (
-            <p className="text-sm text-muted-foreground">Graphify report is not available yet.</p>
+            <p className="text-sm text-muted-foreground">{t("repository.graphifyNotAvailable")}</p>
           )}
         </article>
       ) : (
